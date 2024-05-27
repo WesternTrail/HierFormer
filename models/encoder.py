@@ -208,7 +208,7 @@ class SelfAttn(nn.Module):
         x = x.transpose(1, 2).reshape(B, C, H, W)
         return x
 
-class LocalAgg(nn.Module):
+class LocalIntegration(nn.Module):
     def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm):
         super().__init__()
@@ -223,8 +223,8 @@ class LocalAgg(nn.Module):
         self.mlp = CMlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
 
     def forward(self, x):
-        x = x + self.pos_embed(x) # 添加位置编码，1 c 64 64 -> 1 c 64 64
-        x = x + self.drop_path(self.pointwise_conv_1(self.attn(self.pointwise_conv_0(self.norm1(x))))) # 经过localaggretion
+        x = x + self.pos_embed(x) # 1 c 64 64 -> 1 c 64 64
+        x = x + self.drop_path(self.pointwise_conv_1(self.attn(self.pointwise_conv_0(self.norm1(x))))) # localaintegration
         x = x + self.drop_path(self.mlp(self.norm2(x))) # feed forward
         return x
 
@@ -234,16 +234,16 @@ class LGLBlock(nn.Module):
         super().__init__()
 
         if sr_ratio > 1:
-            self.LocalAgg = LocalAgg(dim, num_heads, mlp_ratio, qkv_bias, qk_scale, drop, attn_drop, drop_path,
-                                     act_layer, norm_layer)
+            self.LocalIn = LocalIntegration(dim, num_heads, mlp_ratio, qkv_bias, qk_scale, drop, attn_drop, drop_path,
+                                            act_layer, norm_layer)
         else:
-            self.LocalAgg = nn.Identity()
+            self.LocalIn = nn.Identity()
 
         self.GlobalAttn = SelfAttn(dim, num_heads, mlp_ratio, qkv_bias, qk_scale, drop, attn_drop, drop_path, act_layer,
                                    norm_layer, sr_ratio)
 
     def forward(self, x):
-        x = self.LocalAgg(x)
+        x = self.LocalIn(x)
         x = self.GlobalAttn(x)
         return x
 
@@ -280,8 +280,8 @@ class Feature_Interaction_Module(nn.Module):
         inp_feats = inp_feats.view(batch_size, self.height, n_feats, inp_feats.shape[2], inp_feats.shape[3]) # B 2 C 8 8,有点类似chunk()
         
         feats_U = torch.sum(inp_feats, dim=1) # b c 8 8
-        feats_S = self.avg_pool(feats_U) # b,256,1,1在后面两个维度上进行平均池化
-        feats_Z = self.conv_du(feats_S) # conv1:b,32,1,1。降低维度？
+        feats_S = self.avg_pool(feats_U) # b,256,1,1
+        feats_Z = self.conv_du(feats_S) # conv1:b,32,1,1
 
         attention_vectors = [fc(feats_Z) for fc in self.fcs] # conv2:b,2,256,1,1
         attention_vectors = torch.cat(attention_vectors, dim=1)

@@ -12,7 +12,6 @@ import math
 
 from models.encoder import LGLBlock, Feature_Interaction_Module, LayerNorm
 
-
 class ConvLayer(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride, padding):
         super(ConvLayer, self).__init__()
@@ -257,7 +256,7 @@ class EncoderTransformer(nn.Module):
             if m.bias is not None:
                 m.bias.data.zero_()
 
-    def forward_features(self, feats):  # 两个时相堆叠在一起，feats: 2B,3,256,256
+    def forward_features(self, feats):  # feats: 2B,3,256,256
         outs = []
 
         # stage 1
@@ -276,7 +275,7 @@ class EncoderTransformer(nn.Module):
         # feats = feats.reshape(B, H1, W1, -1).permute(0, 3, 1, 2).contiguous()
         outs.append(feats)  # [2B,64,H/4,W/4,,2B,128,H/8,W/8,]
 
-        # stage3: 执行空间interaction
+        # stage3: spatial interaction
         x1, x2 = torch.chunk(feats, 2)
         x1, x2 = self.spatialex(x1, x2)
         feats = torch.cat((x1, x2), dim=0)
@@ -288,14 +287,14 @@ class EncoderTransformer(nn.Module):
         # feats = feats.reshape(B, H1, W1, -1).permute(0, 3, 1, 2).contiguous()
         outs.append(feats)  # [(2B,64,H/4,W/4),,(2B,128,H/8,W/8),(2B,320,H/16,W/16),]
 
-        # stage4: 执行通道interaction
+        # stage4: channel interaction
         x1, x2 = torch.chunk(feats, 2)
         x1, x2 = self.channelex(x1, x2)
         feats = torch.cat((x1, x2), dim=0)
         feats, H1, W1 = self.patch_embed4(feats)
         for i, blk in enumerate(self.block4):
             feats = blk(feats)
-        # 执行通道interaction
+        # channel interaction
         x1, x2 = torch.chunk(feats, 2)
         x1, x2 = self.channelex(x1, x2)
         feats = torch.cat((x1, x2), dim=0)
@@ -310,14 +309,14 @@ class EncoderTransformer(nn.Module):
         return x
 
 
-class DecoderTransformer(nn.Module):
+class FeatureFusionDecoder(nn.Module):
     """
     Transformer Decoder
     """
 
     def __init__(self, align_corners=True, in_channels=[64, 128, 320, 512], embedding_dim=256, output_nc=2,
                  decoder_softmax=False):
-        super(DecoderTransformer, self).__init__()
+        super(FeatureFusionDecoder, self).__init__()
 
         # settings
         self.align_corners = align_corners
@@ -444,9 +443,9 @@ class HierFormer(nn.Module):
                                           norm_layer=partial(LayerNorm, eps=1e-6), depths=self.depths)
 
         # Transformer Decoder
-        self.TDec_x2 = DecoderTransformer(align_corners=False, in_channels=self.embed_dims,
-                                          embedding_dim=self.embedding_dim,
-                                          output_nc=output_nc, decoder_softmax=decoder_softmax)
+        self.TDec_x2 = FeatureFusionDecoder(align_corners=False, in_channels=self.embed_dims,
+                                            embedding_dim=self.embedding_dim,
+                                            output_nc=output_nc, decoder_softmax=decoder_softmax)
 
     def forward(self, x1, x2):
         outs = self.Tenc_x2(torch.cat((x1, x2), dim=0))
@@ -458,13 +457,3 @@ class HierFormer(nn.Module):
             fx2.append(split_tensors[1])
         cp = self.TDec_x2(fx1, fx2)
         return cp
-
-from thop import profile, clever_format
-
-if __name__ == '__main__':
-    model = HierFormer().cuda()
-    img1 = torch.randn(1, 3, 256, 256).cuda()
-    img2 = torch.randn(1, 3, 256, 256).cuda()
-    flops, params = profile(model, inputs=(img1, img2))
-    flops, params = clever_format([flops, params], "%.3f")
-    print(flops, params)
