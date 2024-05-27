@@ -57,7 +57,7 @@ if __name__ == '__main__':
 
     # optimizer
     parser.add_argument('--optimizer', default='adamw', type=str)
-    parser.add_argument('--lr', default=0.00021, type=float)
+    parser.add_argument('--lr', default=0.00041, type=float)
     parser.add_argument('--max_epochs', default=300, type=int)
     parser.add_argument('--lr_policy', default='linear', type=str, help='linear | step')
     parser.add_argument('--lr_decay_iters', default=[100], type=int)
