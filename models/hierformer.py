@@ -443,9 +443,9 @@ class HierFormer(nn.Module):
                                           norm_layer=partial(LayerNorm, eps=1e-6), depths=self.depths)
 
         # Transformer Decoder
-        self.TDec_x2 = FeatureFusionDecoder(align_corners=False, in_channels=self.embed_dims,
-                                            embedding_dim=self.embedding_dim,
-                                            output_nc=output_nc, decoder_softmax=decoder_softmax)
+        self.featurefusiondecoder = FeatureFusionDecoder(align_corners=False, in_channels=self.embed_dims,
+                                                         embedding_dim=self.embedding_dim,
+                                                         output_nc=output_nc, decoder_softmax=decoder_softmax)
 
     def forward(self, x1, x2):
         outs = self.Tenc_x2(torch.cat((x1, x2), dim=0))
@@ -455,5 +455,5 @@ class HierFormer(nn.Module):
             split_tensors = torch.chunk(tensor, 2, dim=0)
             fx1.append(split_tensors[0])
             fx2.append(split_tensors[1])
-        cp = self.TDec_x2(fx1, fx2)
+        cp = self.featurefusiondecoder(fx1, fx2)
         return cp
